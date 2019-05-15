@@ -10,6 +10,8 @@ HunterGate(
 project(shaka_player_embedded VERSION 0.1.0)
 
 option(SHAKA_PLAYER_EMBEDDED_BUILD_DEMO "Build demo" OFF)
+option(SHAKA_PLAYER_EMBEDDED_IOS_FRAMEWORK "Build iOS framework" ON)
+option(SHAKA_PLAYER_EMBEDDED_IOS_SIMULATOR "Build for iOS simulator" OFF)
 
 # See 'js_engine', BUILD.gn
 # Values: JSC, V8
@@ -369,6 +371,23 @@ set(
     ${idl_shaka_sources}
 )
 
+if(IOS AND NOT SHAKA_PLAYER_EMBEDDED_IOS_SIMULATOR)
+  set(force_hardware_decode TRUE)
+else()
+  set(force_hardware_decode FALSE)
+endif()
+
+# BUILD.gn
+# if (force_hardware_decode) {
+if(force_hardware_decode)
+  list(
+      APPEND
+      sources
+      shaka/src/media/hardware_support.cc
+      shaka/src/media/hardware_support.h
+  )
+endif()
+
 if("${SHAKA_PLAYER_EMBEDDED_JS_ENGINE}" STREQUAL "JSC")
   list(
       APPEND
@@ -398,13 +417,23 @@ elseif("${SHAKA_PLAYER_EMBEDDED_JS_ENGINE}" STREQUAL "V8")
   )
 endif()
 
+set(resources "")
+
 if(IOS)
   list(
       APPEND
       sources
       shaka/src/public/ShakaPlayerView.mm
   )
+  if(SHAKA_PLAYER_EMBEDDED_IOS_FRAMEWORK)
+    set(
+        resources
+        ${CMAKE_CURRENT_LIST_DIR}/shaka/js/shaka-player.compiled.js
+    )
+  endif()
 endif()
+
+list(APPEND sources ${resources})
 
 # shared_library("player_shared")
 add_library(shaka_player_embedded ${sources})
@@ -414,12 +443,48 @@ add_library(
     shaka_player_embedded
 )
 
+set(SHAKA_PLAYER_EMBEDDED_IOS_FRAMEWORK_LOCATION "")
+
 if(IOS)
   set_target_properties(
      shaka_player_embedded
      PROPERTIES
      XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC YES
+     BUILD_WITH_INSTALL_RPATH YES
+     BUILD_WITH_INSTALL_NAME_DIR YES
+     INSTALL_NAME_DIR "@rpath//"
   )
+
+  if(SHAKA_PLAYER_EMBEDDED_IOS_FRAMEWORK)
+    set_target_properties(
+        shaka_player_embedded
+        PROPERTIES
+        FRAMEWORK TRUE
+        MACOSX_FRAMEWORK_INFO_PLIST "${CMAKE_CURRENT_LIST_DIR}/iOSFrameworkInfo.plist"
+        OUTPUT_NAME ShakaPlayerEmbedded
+        RESOURCE "${resources}"
+    )
+
+    list(LENGTH CMAKE_CONFIGURATION_TYPES len)
+    if(NOT len EQUAL "1")
+      message(
+          FATAL_ERROR
+          "Only one configuration type allowed."
+          "Current CMAKE_CONFIGURATION_TYPES=${CMAKE_CONFIGURATION_TYPES}"
+      )
+    endif()
+
+    if(SHAKA_PLAYER_EMBEDDED_IOS_SIMULATOR)
+      set(subdir "iphonesimulator")
+    else()
+      set(subdir "iphoneos")
+    endif()
+
+    set(
+        SHAKA_PLAYER_EMBEDDED_IOS_FRAMEWORK_LOCATION
+        "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CONFIGURATION_TYPES}-${subdir}/ShakaPlayerEmbedded.framework"
+    )
+  endif()
 endif()
 
 if(APPLE)
@@ -433,7 +498,17 @@ target_compile_definitions(
     PUBLIC
     $<BUILD_INTERFACE:OS_POSIX>
     $<BUILD_INTERFACE:BUILDING_SHAKA>
+    $<BUILD_INTERFACE:HAS_SWSCALE>
+    $<BUILD_INTERFACE:ENABLE_HARDWARE_DECODE>
 )
+
+if(force_hardware_decode)
+  target_compile_definitions(
+      shaka_player_embedded
+      PUBLIC
+      $<BUILD_INTERFACE:FORCE_HARDWARE_DECODE>
+  )
+endif()
 
 if("${SHAKA_PLAYER_EMBEDDED_JS_ENGINE}" STREQUAL "JSC")
   target_compile_definitions(
@@ -592,8 +667,20 @@ install(
     ${public_dir}/stats.h
     ${public_dir}/track.h
     ${gen_dir}/shaka_config.h
+    ${shaka_version_h}
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/shaka
 )
+
+if(IOS)
+  install(
+      FILES
+      ${public_dir}/manifest_objc.h
+      ${public_dir}/player_externs_objc.h
+      ${public_dir}/stats_objc.h
+      ${public_dir}/track_objc.h
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/shaka
+  )
+endif()
 
 ### }
 
@@ -603,6 +690,7 @@ install(
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    FRAMEWORK DESTINATION "."
     INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
 )
 

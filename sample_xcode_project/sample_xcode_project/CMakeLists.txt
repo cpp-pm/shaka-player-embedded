@@ -2,6 +2,8 @@ set(
     resources
     ${CMAKE_CURRENT_LIST_DIR}/Base.lproj/LaunchScreen.storyboard
     ${CMAKE_CURRENT_LIST_DIR}/Base.lproj/Main.storyboard
+    ${CMAKE_CURRENT_LIST_DIR}/assets.plist
+    ${CMAKE_CURRENT_LIST_DIR}/Assets.xcassets
 )
 
 add_executable(
@@ -28,6 +30,7 @@ add_executable(
     ProgressAndBufferedSlider.m
     main.m
     ${resources}
+    ${SHAKA_PLAYER_EMBEDDED_IOS_FRAMEWORK_LOCATION}
 )
 
 target_link_libraries(
@@ -47,4 +50,14 @@ set_target_properties(
     XCODE_ATTRIBUTE_PRODUCT_NAME "ShakaPlayer"
     XCODE_ATTRIBUTE_BUNDLE_IDENTIFIER "com.github.google.shakaplayerembedded"
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER  "com.github.google.shakaplayerembedded"
+    XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/Frameworks"
 )
+
+if(NOT "${SHAKA_PLAYER_EMBEDDED_IOS_FRAMEWORK_LOCATION}" STREQUAL "")
+  set_source_files_properties(
+      ${SHAKA_PLAYER_EMBEDDED_IOS_FRAMEWORK_LOCATION}
+      PROPERTIES
+      GENERATED YES
+      MACOSX_PACKAGE_LOCATION Frameworks
+  )
+endif()
